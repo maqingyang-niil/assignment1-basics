@@ -1,14 +1,31 @@
 import regex as re
 from cs336_basics.pretokenization import find_chunk_boundaries
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+import heapq
 
-## 特殊token处理
-special_token=[
-    "<|endoftext|>"
-]
+class ReverseBytes:
+    __slots__ = ("data",)
+    def __init__(self, data):
+        self.data = data
+    def __lt__(self, other):
+        return self.data > other.data  # 反转比较方向
+    def __eq__(self, other):
+        return self.data == other.data
+
+def rebuild_heap(global_dict_pair):
+    heap = []
+    for pair, count in global_dict_pair.items():
+        heapq.heappush(heap, (-count, ReverseBytes(pair[0]), ReverseBytes(pair[1]), pair))
+    return heap
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
+## 重建新堆
+def rebuild_heap(global_dict_pair):
+    heap = []
+    for pair, count in global_dict_pair.items():
+        heapq.heappush(heap, (-count, ReverseBytes(pair[0]), ReverseBytes(pair[1]), pair))
+    return heap
 ## 统计chunk中的字符个数
 def get_statistic(
         start:int,
@@ -47,14 +64,14 @@ def train_bpe(
 
     with open(input_path,"rb") as f:
         boundaries=find_chunk_boundaries(f,
-                                         12,
+                                         8,
                                          eot_bytes)
-        thread_len=len(boundaries)-1
+        chunk_num=len(boundaries)-1
 
 ## 线程池处理全部的文本
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ProcessPoolExecutor(max_workers=8) as executor:
         futures=[]
-        for i in range(thread_len):
+        for i in range(chunk_num):
             start=boundaries[i]
             end=boundaries[i+1]
             future=executor.submit(
@@ -82,13 +99,8 @@ def train_bpe(
 
 ## 单词中的字母两两组合
 ## 以及这个两两组合出现在哪些单词元组中
-## 获取频率最大的pair
     global_dict_pair={}
     global_pair_to_word={}
-
-    max_pair=None
-    max_count=0
-
 
     for word,freq in global_dict_tuple.items():
         for i in range(len(word)-1):
@@ -98,11 +110,10 @@ def train_bpe(
             global_pair_to_word.setdefault(pair,set()).add(word)
 
             count=global_dict_pair[pair]
-            if (count>max_count or (count==max_count and (max_pair is None or pair>max_pair))):
-                max_count=count
-                max_pair=pair
     
-
+    heap = []
+    for pair, count in global_dict_pair.items():
+        heapq.heappush(heap, (-count, ReverseBytes(pair[0]), ReverseBytes(pair[1]), pair))
 
 ## 初始化vocab
     vocab={}
@@ -116,7 +127,16 @@ def train_bpe(
     merges=[]
 
     for i in range(num_merge):
-        max_pair = max(global_dict_pair,key=lambda pair: (global_dict_pair[pair], pair))
+        if len(heap)>2*len(global_dict_pair):
+            heap=rebuild_heap(global_dict_pair)
+
+        while True:
+            neg_count,_,_,pair=heapq.heappop(heap)
+            count=-neg_count
+            if global_dict_pair.get(pair,0)==count:
+                max_pair=pair
+                break
+        
         merges.append(max_pair)
         new_token=max_pair[0]+max_pair[1]
         vocab[len(vocab)]=new_token
@@ -137,24 +157,27 @@ def train_bpe(
             new_word=tuple(new_word)
 ## 提取旧pair
             old_pairs={}
-
             for i in range(len(word)-1):
                 pair=(word[i],word[i+1])
                 old_pairs[pair]=old_pairs.get(pair,0)+1
 ## 提取新pair
             new_pairs={}
-
             for i in range(len(new_word)-1):
                 pair=(new_word[i],new_word[i+1])
                 new_pairs[pair]=new_pairs.get(pair,0)+1
 ## 减去旧pair的频率
             for pair,count in old_pairs.items():
-                global_dict_pair[pair]-=count*freq
-                if global_dict_pair[pair]==0:
+                new_count=global_dict_pair[pair]-count*freq
+                if new_count<=0:
                     del global_dict_pair[pair]
+                else:
+                    global_dict_pair[pair]=new_count
+                    heapq.heappush(heap,(-new_count,ReverseBytes(pair[0]),ReverseBytes(pair[1]),pair))
 ## 加上新pair的频率
             for pair,count in new_pairs.items():
-                global_dict_pair[pair]=global_dict_pair.get(pair,0)+count*freq
+                new_count=global_dict_pair.get(pair,0)+count*freq
+                global_dict_pair[pair]=new_count
+                heapq.heappush(heap,(-new_count,ReverseBytes(pair[0]),ReverseBytes(pair[1]),pair))
 ## 删掉旧word
             del global_dict_tuple[word]
 ## 增加新word
