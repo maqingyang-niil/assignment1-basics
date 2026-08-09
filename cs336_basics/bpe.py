@@ -2,6 +2,7 @@ import regex as re
 from cs336_basics.pretokenization import find_chunk_boundaries
 from concurrent.futures import ProcessPoolExecutor
 import heapq
+import os
 
 class ReverseBytes:
     __slots__ = ("data",)
@@ -55,21 +56,25 @@ def get_statistic(
 def train_bpe(
         input_path:str,
         vocab_size:int,
-        special_tokens:list[str]
+        special_tokens:list[str],
+        workers:int
 )->tuple[dict[int,bytes],list[tuple[bytes,bytes]]]:
     eot_token=special_tokens[special_tokens.index("<|endoftext|>")]
     eot_bytes=eot_token.encode("utf-8")
 
 ## 获取文件分割点，以及chunk的数量
+    max_workers=os.cpu_count()
+    if workers>max_workers:
+        workers=max_workers
 
     with open(input_path,"rb") as f:
         boundaries=find_chunk_boundaries(f,
-                                         8,
+                                         workers,
                                          eot_bytes)
         chunk_num=len(boundaries)-1
 
 ## 线程池处理全部的文本
-    with ProcessPoolExecutor(max_workers=8) as executor:
+    with ProcessPoolExecutor(max_workers=chunk_num) as executor:
         futures=[]
         for i in range(chunk_num):
             start=boundaries[i]
