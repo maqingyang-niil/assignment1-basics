@@ -126,6 +126,7 @@ def train_bpe(
             freq=global_dict_tuple[word]
             new_word=[]
             i=0
+## 提取新word
             while i<len(word):
                 if i+1<len(word) and (word[i],word[i+1])==max_pair:
                     new_word.append(max_pair[0]+max_pair[1])
@@ -134,38 +135,38 @@ def train_bpe(
                     new_word.append(word[i])
                     i+=1
             new_word=tuple(new_word)
-
+## 提取旧pair
             old_pairs={}
 
             for i in range(len(word)-1):
                 pair=(word[i],word[i+1])
                 old_pairs[pair]=old_pairs.get(pair,0)+1
-
+## 提取新pair
             new_pairs={}
 
             for i in range(len(new_word)-1):
                 pair=(new_word[i],new_word[i+1])
                 new_pairs[pair]=new_pairs.get(pair,0)+1
-
+## 减去旧pair的频率
             for pair,count in old_pairs.items():
                 global_dict_pair[pair]-=count*freq
                 if global_dict_pair[pair]==0:
                     del global_dict_pair[pair]
-
+## 加上新pair的频率
             for pair,count in new_pairs.items():
                 global_dict_pair[pair]=global_dict_pair.get(pair,0)+count*freq
-
+## 删掉旧word
             del global_dict_tuple[word]
-
+## 增加新word
             global_dict_tuple[new_word]=global_dict_tuple.get(new_word,0)+freq
-
+## 删掉旧pair对旧word的所有索引
             for pair in old_pairs:
                 if pair in global_pair_to_word:
                     global_pair_to_word[pair].discard(word)
 
                     if not global_pair_to_word[pair]:
                         del global_pair_to_word[pair]
-
+## 增加新pair对新word的所有索引
             for pair in new_pairs:
                 global_pair_to_word.setdefault(pair,set()).add(new_word)
             
