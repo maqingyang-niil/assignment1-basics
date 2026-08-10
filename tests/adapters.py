@@ -590,4 +590,5 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     workers=12
-    return train_bpe(input_path,vocab_size,special_tokens,workers)
+    chunks=24
+    return train_bpe(input_path,vocab_size,special_tokens,workers,chunks)

@@ -1,8 +1,9 @@
 import regex as re
 from cs336_basics.pretokenization import find_chunk_boundaries
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor,as_completed
 import heapq
 import os
+from collections import Counter
 
 class ReverseBytes:
     __slots__ = ("data",)
@@ -12,12 +13,6 @@ class ReverseBytes:
         return self.data > other.data  # 反转比较方向
     def __eq__(self, other):
         return self.data == other.data
-
-def rebuild_heap(global_dict_pair):
-    heap = []
-    for pair, count in global_dict_pair.items():
-        heapq.heappush(heap, (-count, ReverseBytes(pair[0]), ReverseBytes(pair[1]), pair))
-    return heap
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
@@ -33,7 +28,7 @@ def get_statistic(
         end:int,
         input_path:str,
         special_tokens:list[str]
-)->dict[bytes,int]:
+)->dict[tuple[bytes,...],int]:
     word_dict = {}
     delimiter="|".join(
         re.escape(token)
@@ -48,7 +43,8 @@ def get_statistic(
 
         for segment in segments:
             for match in re.finditer(PAT,segment):
-                word=match.group().encode("utf-8")
+                word_bytes=match.group().encode("utf-8")
+                word=tuple(bytes([c]) for c in word_bytes)
                 word_dict[word]=word_dict.get(word,0)+1
 
     return word_dict
@@ -57,7 +53,8 @@ def train_bpe(
         input_path:str,
         vocab_size:int,
         special_tokens:list[str],
-        workers:int
+        workers:int,
+        chunks:int
 )->tuple[dict[int,bytes],list[tuple[bytes,bytes]]]:
     eot_token=special_tokens[special_tokens.index("<|endoftext|>")]
     eot_bytes=eot_token.encode("utf-8")
@@ -69,38 +66,17 @@ def train_bpe(
 
     with open(input_path,"rb") as f:
         boundaries=find_chunk_boundaries(f,
-                                         workers,
+                                         chunks,
                                          eot_bytes)
         chunk_num=len(boundaries)-1
 
-## 线程池处理全部的文本
-    with ProcessPoolExecutor(max_workers=chunk_num) as executor:
-        futures=[]
-        for i in range(chunk_num):
-            start=boundaries[i]
-            end=boundaries[i+1]
-            future=executor.submit(
-                get_statistic,
-                start,
-                end,
-                input_path,
-                special_tokens,
-            )
-            futures.append(future)
-
-        local_dict=[]
-        for future in futures:
-            local_dict.append(future.result())
-## 得到整体的字符统计
-    global_dict={}
-    for local in local_dict:
-        for word,count in local.items():
-            global_dict[word]=global_dict.get(word,0)+count
-
-## 将单词转化为字母元组
-    global_dict_tuple={}
-    for k,v in global_dict.items():
-        global_dict_tuple[tuple(bytes([c]) for c in k)]=v
+## 多进程处理全部的文本
+    global_dict_tuple=Counter()
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures=[executor.submit(get_statistic,boundaries[i],boundaries[i+1],input_path,special_tokens)
+                 for i in range(chunk_num)]
+        for future in as_completed(futures):
+            global_dict_tuple.update(future.result())
 
 ## 单词中的字母两两组合
 ## 以及这个两两组合出现在哪些单词元组中
@@ -113,8 +89,6 @@ def train_bpe(
             global_dict_pair[pair]=global_dict_pair.get(pair,0)+freq
 
             global_pair_to_word.setdefault(pair,set()).add(word)
-
-            count=global_dict_pair[pair]
     
     heap = []
     for pair, count in global_dict_pair.items():
