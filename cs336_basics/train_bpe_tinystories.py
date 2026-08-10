@@ -15,14 +15,15 @@ special_tokens=[
 def main():
     workers=15
     start=time.time()
-    vocab,merges=train_bpe("../data/TinyStoriesV2-GPT4-train.txt",10000,special_tokens,workers)
+    chunks=15
+    vocab,merges=train_bpe("../data/TinyStoriesV2-GPT4-train.txt",10000,special_tokens,workers,chunks)
     end=time.time()
     period=end-start
     print(period)
     os.makedirs("../log",exist_ok=True)
-    with open("../log/vocab.pkl","wb") as f:
+    with open("../log/vocab_ts.pkl","wb") as f:
         pickle.dump(vocab,f)
-    with open("../log/merges.pkl","wb") as f:
+    with open("../log/merges_ts.pkl","wb") as f:
         pickle.dump(merges,f)
 
 
