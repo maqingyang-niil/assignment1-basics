@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor,as_completed
 import heapq
 import os
 from collections import Counter
+import time
 
 class ReverseBytes:
     __slots__ = ("data",)
@@ -28,7 +29,7 @@ def get_statistic(
         end:int,
         input_path:str,
         special_tokens:list[str]
-)->dict[tuple[bytes,...],int]:
+)->dict[bytes,int]:
     word_dict = {}
     delimiter="|".join(
         re.escape(token)
@@ -43,10 +44,8 @@ def get_statistic(
 
         for segment in segments:
             for match in re.finditer(PAT,segment):
-                word_bytes=match.group().encode("utf-8")
-                word=tuple(bytes([c]) for c in word_bytes)
+                word=match.group().encode("utf-8")
                 word_dict[word]=word_dict.get(word,0)+1
-
     return word_dict
 
 def train_bpe(
@@ -69,15 +68,16 @@ def train_bpe(
                                          chunks,
                                          eot_bytes)
         chunk_num=len(boundaries)-1
-
+    print("Finish splitting documents into chunks")
 ## 多进程处理全部的文本
-    global_dict_tuple=Counter()
+    global_dict=Counter()
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures=[executor.submit(get_statistic,boundaries[i],boundaries[i+1],input_path,special_tokens)
                  for i in range(chunk_num)]
         for future in as_completed(futures):
-            global_dict_tuple.update(future.result())
-
+            global_dict.update(future.result())
+    print("Finish processing chunks in multithreads")
+    global_dict_tuple={tuple(bytes([c]) for c in k):v for k,v in global_dict.items()}
 ## 单词中的字母两两组合
 ## 以及这个两两组合出现在哪些单词元组中
     global_dict_pair={}
@@ -104,7 +104,8 @@ def train_bpe(
 ## merge对应的pair
     num_merge=vocab_size-256-len(special_tokens)
     merges=[]
-
+    print("Finish initialising basic data")
+    print("Start to merge")
     for i in range(num_merge):
         if len(heap)>2*len(global_dict_pair):
             heap=rebuild_heap(global_dict_pair)
