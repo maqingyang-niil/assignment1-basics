@@ -13,6 +13,7 @@ from cs336_basics.tokenizer import tokenizer
 from cs336_basics.linear import Linear
 from cs336_basics.embedding import Embedding
 from cs336_basics.rmsnorm import Rmsnorm
+from cs336_basics.swiglu import SwiGLU
 
 def run_linear(
     d_in: int,
@@ -32,10 +33,10 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-    lin=Linear(d_in,d_out,device=weights.device,dtype=weights.dtype)
-    lin.load_state_dict({"W":weights})
+    linear=Linear(d_in,d_out,device=weights.device,dtype=weights.dtype)
+    linear.load_state_dict({"W":weights})
 
-    return lin.forward(in_features)
+    return linear(in_features)
 
 
 def run_embedding(
@@ -58,7 +59,7 @@ def run_embedding(
     """
     embedding=Embedding(vocab_size,d_model,weights.device,weights.dtype)
     embedding.load_state_dict({"E":weights})
-    return embedding.forward(token_ids)
+    return embedding(token_ids)
 
 
 def run_swiglu(
@@ -90,7 +91,13 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu=SwiGLU(d_model,d_ff,device=in_features.device,dtype=in_features.dtype)
+    swiglu.load_state_dict({
+        "w1.W":w1_weight,
+        "w2.W":w2_weight,
+        "w3.W":w3_weight,
+    })
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
