@@ -20,7 +20,7 @@ from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attenti
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttentionRoPE
 from cs336_basics.transformer_block import TransformerBlock
-
+from cs336_basics.transformer_lm import TransformerLM
 
 
 def run_linear(
@@ -412,7 +412,30 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    device=weights["token_embeddings.weight"].device
+    dtype=weights["token_embeddings.weight"].dtype
+    tb=TransformerLM(vocab_size,context_length,d_model,num_heads,num_layers,d_ff,rope_theta,device,dtype)
+
+    with torch.no_grad():
+        tb.token_embedding.E.copy_(weights["token_embeddings.weight"])
+        for i in range(num_layers):
+            layer=tb.layers[i]
+            q_proj_w=weights[f"layers.{i}.attn.q_proj.weight"]
+            k_proj_w=weights[f"layers.{i}.attn.k_proj.weight"]
+            v_proj_w=weights[f"layers.{i}.attn.v_proj.weight"]
+            qkv_proj_w=torch.cat([q_proj_w,k_proj_w,v_proj_w],dim=0)
+            layer.attn.qkv_proj.W.copy_(qkv_proj_w)
+            layer.attn.output_proj.W.copy_(weights[f"layers.{i}.attn.output_proj.weight"])
+            layer.ln1.g.copy_(weights[f"layers.{i}.ln1.weight"])
+            layer.ln2.g.copy_(weights[f"layers.{i}.ln2.weight"])
+
+            layer.ffn.w1.W.copy_(weights[f"layers.{i}.ffn.w1.weight"])
+            layer.ffn.w2.W.copy_(weights[f"layers.{i}.ffn.w2.weight"])
+            layer.ffn.w3.W.copy_(weights[f"layers.{i}.ffn.w3.weight"])
+
+        tb.ln_final.g.copy_(weights["ln_final.weight"])
+        tb.lm_head.W.copy_(weights["lm_head.weight"])
+    return tb(in_indices)
 
 
 def run_rmsnorm(
