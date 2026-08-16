@@ -19,8 +19,7 @@ from cs336_basics.softmax import softmax
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttentionRoPE
-
-
+from cs336_basics.transformer_block import TransformerBlock
 
 
 
@@ -311,7 +310,27 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    q_proj_w=weights["attn.q_proj.weight"]
+    k_proj_w=weights["attn.k_proj.weight"]
+    v_proj_w=weights["attn.v_proj.weight"]
+    qkv_proj=torch.cat([q_proj_w,k_proj_w,v_proj_w],dim=0)
+    output_proj=weights["attn.output_proj.weight"]
+    ln1_w=weights["ln1.weight"]
+    ln2_w=weights["ln2.weight"]
+    ffn_w1=weights["ffn.w1.weight"]
+    ffn_w2=weights["ffn.w2.weight"]
+    ffn_w3=weights["ffn.w3.weight"]
+    tb=TransformerBlock(d_model,num_heads,d_ff,theta,max_seq_len,in_features.device,in_features.dtype)
+    tb.load_state_dict({
+        "attn.qkv_proj.W":qkv_proj,
+        "attn.output_proj.W":output_proj,
+        "ln1.g":ln1_w,
+        "ln2.g":ln2_w,
+        "ffn.w1.W":ffn_w1,
+        "ffn.w2.W":ffn_w2,
+        "ffn.w3.W":ffn_w3
+    })
+    return tb(in_features)
 
 
 def run_transformer_lm(
