@@ -10,10 +10,10 @@ special_tokens=[
 ]
 
 def main():
-    workers=8
+    workers=6
     start=time.time()
-    chunks=64
-    vocab,merges=train_bpe("/media/cronusiius/Data/datasets/openwebtext/openwebtext_500M.txt",32000,special_tokens,workers,chunks)
+    chunks=200
+    vocab,merges=train_bpe("/media/cronusiius/Data/datasets/openwebtext/owt_train_3G.txt",500,special_tokens,workers,chunks)
     print(time.time()-start)
 
     os.makedirs("../log",exist_ok=True)
